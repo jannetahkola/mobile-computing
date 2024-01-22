@@ -13,15 +13,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import fi.jannetahkola.mobilecomputing.ui.theme.MobileComputingTheme
 
 class MainActivity : ComponentActivity() {
@@ -30,8 +36,33 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MobileComputingTheme {
-                Conversation(SampleData.conversationSample)
+                val navController = rememberNavController()
+                MyNavHost(navController = navController)
             }
+        }
+    }
+}
+
+@Composable
+fun MyNavHost(modifier: Modifier = Modifier,
+              navController: NavHostController = rememberNavController(),
+              startDestination: String = "conversation") {
+    NavHost(
+        modifier = modifier,
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        composable("conversation") {
+            Conversation(
+                messages = SampleData.conversationSample,
+                onNavigateToProfile = { navController.navigate("profile") }
+            )
+        }
+        composable("profile") {
+            Profile(
+                onNavigateToConversation = { navController.navigate("conversation")
+                }
+            )
         }
     }
 }
@@ -76,7 +107,9 @@ fun MessageCard(msg: Message) {
                 shape = MaterialTheme.shapes.medium,
                 shadowElevation = 1.dp,
                 color = surfaceColor,
-                modifier = Modifier.animateContentSize().padding(1.dp)
+                modifier = Modifier
+                    .animateContentSize()
+                    .padding(1.dp)
             ) {
                 Text(
                     text = msg.body,
@@ -90,35 +123,32 @@ fun MessageCard(msg: Message) {
 }
 
 @Composable
-fun Conversation(messages: List<Message>) {
+fun Conversation(messages: List<Message>, onNavigateToProfile: () -> Unit) {
     LazyColumn {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(all = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Conversation", style = MaterialTheme.typography.titleLarge)
+                Button(onClick = onNavigateToProfile) {
+                    Text(text = "Profile")
+                }
+            }
+        }
         items(messages) { message ->
             MessageCard(message)
         }
     }
 }
 
-@Preview
 @Composable
-fun PreviewConversation() {
-    MobileComputingTheme {
-        Conversation(SampleData.conversationSample)
-    }
-}
-
-@Preview(name = "Light Mode")
-@Preview(
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-    showBackground = true,
-    name = "Dark Mode"
-)
-@Composable
-fun PreviewMessageCard() {
-    MobileComputingTheme {
-        Surface {
-            MessageCard(
-                msg = Message("Lexi", "Hey, take a look at Jetpack Compose, it's great!")
-            )
+fun Profile(onNavigateToConversation: () -> Unit) {
+    Row {
+        Text(text = "Profile")
+        Button(onClick = onNavigateToConversation) {
+            Text(text = "Back to Conversation")
         }
     }
 }
