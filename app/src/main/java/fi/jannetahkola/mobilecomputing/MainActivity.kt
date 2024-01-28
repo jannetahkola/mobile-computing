@@ -55,12 +55,19 @@ fun MyNavHost(modifier: Modifier = Modifier,
         composable("conversation") {
             Conversation(
                 messages = SampleData.conversationSample,
-                onNavigateToProfile = { navController.navigate("profile") }
+                onNavigateToProfile = {
+                    navController.navigate("profile")
+                }
             )
         }
         composable("profile") {
             Profile(
-                onNavigateToConversation = { navController.navigate("conversation")
+                onNavigateToConversation = {
+                    navController.navigate("conversation")  {
+                        popUpTo("conversation") {
+                            inclusive = true
+                        }
+                    }
                 }
             )
         }
