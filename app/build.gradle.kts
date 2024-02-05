@@ -96,4 +96,7 @@ dependencies {
 
     // optional - Kotlin Extensions and Coroutines support for Room
     implementation("androidx.room:room-ktx:$room_version")
+
+    // For async loading of images from URIs
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }
