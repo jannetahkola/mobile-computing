@@ -1,8 +1,12 @@
 package fi.jannetahkola.mobilecomputing
 
 import SampleData
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
@@ -30,6 +34,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat.getSystemService
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -45,6 +53,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        createNotificationChannel();
+
         setContent {
             val users = AppDatabase.getDatabase(applicationContext)
                 .userDao().getAll().collectAsState(initial = listOf())
@@ -52,8 +63,85 @@ class MainActivity : ComponentActivity() {
             MobileComputingTheme {
                 MyNavHost(
                     applicationContext = applicationContext,
-                    users = users
+                    users = users,
+                    sendNotification = {
+                        Log.i(LOG_NOTIFICATION, "Sending notification")
+                        sendNotification()
+                    }
                 )
+            }
+        }
+    }
+
+    companion object {
+        const val LOG_NOTIFICATION = "notification"
+        const val NOTIFICATION_CHANNEL_ID: String = "test-channel-id"
+        const val NOTIFICATION_ID: Int = 1
+        const val NOTIFICATION_PERMISSION_AGREE_CODE = 1
+    }
+
+    private fun createNotificationChannel() {
+        val name = "test-channel"
+        val descriptionText = "test channel description"
+        val importance = NotificationManager.IMPORTANCE_DEFAULT
+        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance)
+            .apply {
+                description = descriptionText
+            }
+        // Register the channel with the system.
+        val notificationManager: NotificationManager =
+            getSystemService(this, NotificationManager::class.java) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    private fun sendNotification() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("textTitle")
+            .setContentText("textContent")
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText("Much longer text that cannot fit one line..."))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true) // Remove notification on tap
+
+        with(NotificationManagerCompat.from(this)) {
+            if (ActivityCompat.checkSelfPermission(
+                    this@MainActivity,
+                    android.Manifest.permission.POST_NOTIFICATIONS // Note the 'android' qualifier here
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.i(LOG_NOTIFICATION, "Failed - permissions not granted, requesting...")
+
+                ActivityCompat.requestPermissions(
+                    this@MainActivity,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_AGREE_CODE
+                )
+
+                return@with
+            }
+            // TODO Should the id be generated for each call?
+            notify(NOTIFICATION_ID, builder.build())
+            Log.i(LOG_NOTIFICATION, "Notification sent")
+        }
+    }
+
+    // Idk why the last two don't work
+    @Suppress("MissingSuperCall", "OverridingDeprecatedMember", "Deprecation")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        when (requestCode) {
+            NOTIFICATION_PERMISSION_AGREE_CODE -> {
+                if (grantResults[0] == PackageManager.PERMISSION_GRANTED)
+                    Log.i(LOG_NOTIFICATION,"Permissions granted")
+                else
+                    Log.i(LOG_NOTIFICATION,"Permissions not granted")
             }
         }
     }
@@ -64,7 +152,8 @@ fun MyNavHost(modifier: Modifier = Modifier,
               navController: NavHostController = rememberNavController(),
               startDestination: String = "conversation",
               applicationContext: Context,
-              users: State<List<User>>
+              users: State<List<User>>,
+              sendNotification: () -> Unit
 ) {
     NavHost(
         modifier = modifier,
@@ -77,7 +166,8 @@ fun MyNavHost(modifier: Modifier = Modifier,
                 users = users,
                 onNavigateToProfile = {
                     navController.navigate("profile")
-                }
+                },
+                sendNotification = sendNotification
             )
         }
         composable("profile") {
@@ -152,7 +242,10 @@ fun MessageCard(msg: Message) {
 }
 
 @Composable
-fun Conversation(messages: List<Message>, users: State<List<User>>, onNavigateToProfile: () -> Unit) {
+fun Conversation(messages: List<Message>,
+                 users: State<List<User>>,
+                 onNavigateToProfile: () -> Unit,
+                 sendNotification: () -> Unit) {
     val userImage = if (users.value.isNotEmpty() && users.value[0].userImage != null) users.value[0].userImage else null
     val username = if (users.value.isNotEmpty() && users.value[0].username != null) users.value[0].username else null
     LazyColumn {
@@ -172,6 +265,13 @@ fun Conversation(messages: List<Message>, users: State<List<User>>, onNavigateTo
                         modifier = Modifier.padding(start = 8.dp)
                     ) {
                         Text(text = if (username != null) "$username's Profile" else "Profile")
+                    }
+                }
+                Row {
+                    Button(onClick = {
+                        sendNotification()
+                    }) {
+                        Text(text = "Notify")
                     }
                 }
             }
