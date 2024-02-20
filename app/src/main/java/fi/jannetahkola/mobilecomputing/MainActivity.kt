@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        initPermissions()
         createNotificationChannel()
         initAmbientTemperatureSensor()
 
@@ -105,6 +106,25 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         notificationManager.createNotificationChannel(channel)
     }
 
+    private fun initPermissions() {
+        Log.i(LOG_NOTIFICATION, "Requesting permissions...")
+        with(NotificationManagerCompat.from(this)) {
+            if (ActivityCompat.checkSelfPermission(
+                    this@MainActivity,
+                    android.Manifest.permission.POST_NOTIFICATIONS // Note the 'android' qualifier here
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this@MainActivity,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_AGREE_CODE
+                )
+
+                return@with
+            }
+        }
+    }
+
     private fun initAmbientTemperatureSensor() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         tempSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE);
@@ -138,13 +158,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     android.Manifest.permission.POST_NOTIFICATIONS // Note the 'android' qualifier here
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                Log.i(LOG_NOTIFICATION, "Failed to send notification - permissions not granted, requesting...")
+                Log.i(LOG_NOTIFICATION, "Failed to send notification - permissions not granted")
 
-                ActivityCompat.requestPermissions(
-                    this@MainActivity,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    NOTIFICATION_PERMISSION_AGREE_CODE
-                )
+                // No point requesting at this point anymore
+//                ActivityCompat.requestPermissions(
+//                    this@MainActivity,
+//                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+//                    NOTIFICATION_PERMISSION_AGREE_CODE
+//                )
 
                 return@with
             }
