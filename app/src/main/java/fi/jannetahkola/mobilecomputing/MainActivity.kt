@@ -8,6 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -48,13 +52,20 @@ import fi.jannetahkola.mobilecomputing.data.User
 import fi.jannetahkola.mobilecomputing.ui.theme.MobileComputingTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), SensorEventListener {
+
+    private lateinit var sensorManager: SensorManager
+    private var tempSensor: Sensor? = null
+    private var tempValue: Float? = null
+    private var tempValueLastNotified: Float? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        createNotificationChannel();
+        createNotificationChannel()
+        initAmbientTemperatureSensor()
 
         setContent {
             val users = AppDatabase.getDatabase(applicationContext)
@@ -63,21 +74,21 @@ class MainActivity : ComponentActivity() {
             MobileComputingTheme {
                 MyNavHost(
                     applicationContext = applicationContext,
-                    users = users,
-                    sendNotification = {
-                        Log.i(LOG_NOTIFICATION, "Sending notification")
-                        sendNotification()
-                    }
+                    users = users
                 )
             }
         }
     }
 
     companion object {
+        const val LOG_SENSOR = "sensor";
         const val LOG_NOTIFICATION = "notification"
+
         const val NOTIFICATION_CHANNEL_ID: String = "test-channel-id"
         const val NOTIFICATION_ID: Int = 1
         const val NOTIFICATION_PERMISSION_AGREE_CODE = 1
+
+        const val SENSOR_NOTIFICATION_INTERVAL_DEGREES = 2;
     }
 
     private fun createNotificationChannel() {
@@ -94,7 +105,17 @@ class MainActivity : ComponentActivity() {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun sendNotification() {
+    private fun initAmbientTemperatureSensor() {
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        tempSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE);
+        if (tempSensor != null) {
+            Log.i(LOG_SENSOR, "Ambient temp sensor found!")
+        } else {
+            Log.i(LOG_SENSOR, "Ambient temp sensor NOT found!")
+        }
+    }
+
+    private fun sendNotification(title: String, contentText: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -103,10 +124,10 @@ class MainActivity : ComponentActivity() {
 
         val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("textTitle")
-            .setContentText("textContent")
-            .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Much longer text that cannot fit one line..."))
+            .setContentTitle(title)
+            .setContentText(contentText)
+//            .setStyle(NotificationCompat.BigTextStyle()
+//                .bigText("Much longer text that cannot fit one line..."))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true) // Remove notification on tap
@@ -117,7 +138,7 @@ class MainActivity : ComponentActivity() {
                     android.Manifest.permission.POST_NOTIFICATIONS // Note the 'android' qualifier here
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                Log.i(LOG_NOTIFICATION, "Failed - permissions not granted, requesting...")
+                Log.i(LOG_NOTIFICATION, "Failed to send notification - permissions not granted, requesting...")
 
                 ActivityCompat.requestPermissions(
                     this@MainActivity,
@@ -145,6 +166,51 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event != null) {
+            val oldTempValue = tempValue
+            val newTempValue = event.values[0]
+            val lastNotifiedWithValue = tempValueLastNotified
+
+            val doNotify =
+                // a value has been set once - do not notify on app start AND
+                (oldTempValue != null)
+                        // never notified before OR
+                    && ((lastNotifiedWithValue == null)
+                        // diff from last notified value is >= interval
+                    || (abs(lastNotifiedWithValue.minus(newTempValue)) >= SENSOR_NOTIFICATION_INTERVAL_DEGREES))
+
+            tempValue = newTempValue
+
+            Log.i(LOG_SENSOR, "Received value: $tempValue")
+
+            if (doNotify) {
+                tempValueLastNotified = tempValue
+                sendNotification("Temperature changed", "Current ambient temperature is $tempValue C")
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        Log.i(LOG_SENSOR, "Sensor accuracy changed to: $accuracy")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i(LOG_SENSOR, "Resuming sensor listener")
+        tempSensor?.also { temp ->
+            sensorManager.registerListener(this, temp, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Do not pause so that we can trigger it when not on foreground
+        Log.i(LOG_SENSOR, "NOT pausing sensor listener")
+//        Log.i(LOG_SENSOR, "Pausing sensor listener")
+//        sensorManager.unregisterListener(this)
+    }
 }
 
 @Composable
@@ -152,8 +218,7 @@ fun MyNavHost(modifier: Modifier = Modifier,
               navController: NavHostController = rememberNavController(),
               startDestination: String = "conversation",
               applicationContext: Context,
-              users: State<List<User>>,
-              sendNotification: () -> Unit
+              users: State<List<User>>
 ) {
     NavHost(
         modifier = modifier,
@@ -166,8 +231,7 @@ fun MyNavHost(modifier: Modifier = Modifier,
                 users = users,
                 onNavigateToProfile = {
                     navController.navigate("profile")
-                },
-                sendNotification = sendNotification
+                }
             )
         }
         composable("profile") {
@@ -244,8 +308,7 @@ fun MessageCard(msg: Message) {
 @Composable
 fun Conversation(messages: List<Message>,
                  users: State<List<User>>,
-                 onNavigateToProfile: () -> Unit,
-                 sendNotification: () -> Unit) {
+                 onNavigateToProfile: () -> Unit) {
     val userImage = if (users.value.isNotEmpty() && users.value[0].userImage != null) users.value[0].userImage else null
     val username = if (users.value.isNotEmpty() && users.value[0].username != null) users.value[0].username else null
     LazyColumn {
@@ -265,13 +328,6 @@ fun Conversation(messages: List<Message>,
                         modifier = Modifier.padding(start = 8.dp)
                     ) {
                         Text(text = if (username != null) "$username's Profile" else "Profile")
-                    }
-                }
-                Row {
-                    Button(onClick = {
-                        sendNotification()
-                    }) {
-                        Text(text = "Notify")
                     }
                 }
             }
